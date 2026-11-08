@@ -373,6 +373,9 @@ def patchTask = tasks.findByName('patchFabricModJson') ?: tasks.register('patchF
             json.description = 'Discord sound for every message in chat!'
             f.text = JsonOutput.prettyPrint(JsonOutput.toJson(json))
             json.license = 'MIT'
+            json.contact = [
+                'sources': 'https://github.com/maksimka-arduinka/Discord-Chat-Sound',
+            ]
         }
     }
 }
