@@ -1,0 +1,5 @@
+{
+  "chat_alert": {
+    "sounds": ["discordchatsound:chat_alert"]
+  }
+}

@@ -1,0 +1,37 @@
+{
+    "schemaVersion": 1,
+    "id": "discord_chat_sound",
+    "version": "1.0.0",
+    "name": "discord chat sound",
+    "authors": [
+        "MCreator"
+    ],
+    "contact": {
+        "homepage": "https://mcreator.net",
+        "sources": ""
+    },
+    "license": "Not specified",
+    "environment": "*",
+    "entrypoints": {
+        "main": [
+            "net.mcreator.discordchatsound.DiscordChatSoundMod"
+        ],
+        "client": [
+            "net.mcreator.discordchatsound.ChatSoundClient"
+        ],
+        "modmenu": [
+            "net.mcreator.discordchatsound.ChatSoundModMenu"
+        ]
+    },
+    "mixins": [
+        "discord_chat_sound.mixins.json"
+    ],
+    "accessWidener": "META-INF/discord_chat_sound.fabric12111.classtweaker",
+    "depends": {
+        "fabricloader": ">=0.18.2",
+        "minecraft": "~1.21.11",
+        "java": ">=21",
+        "fabric-api": "*"
+    },
+    "description": "Discord sound for every message in chat!"
+}

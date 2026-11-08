@@ -1,0 +1,382 @@
+plugins {
+    id 'net.fabricmc.fabric-loom-remap' version '1.14-SNAPSHOT'
+}
+
+version = '1.0'
+group = 'com.yourname'
+base.archivesName = "modid"
+actualmodid = 'discord_chat_sound'
+
+loom {
+    mixin {
+        useLegacyMixinAp = true
+        defaultRefmapName = actualmodid + ".refmap.json"
+    }
+
+    // Fabric 1.21.11 uses named class-tweaker mappings, while newer Fabric
+    // generators using this workspace path expect official mappings. Keep
+    // them at separate locations so the next generator's initial @sync task
+    // cannot accidentally process a stale named tweaker as an official one.
+    def classTweakerFile = file("src/main/resources/META-INF/discord_chat_sound.fabric12111.classtweaker")
+    def legacySharedTweaker = file("src/main/resources/META-INF/discord_chat_sound.classtweaker")
+
+    // Migrate workspaces created by Fabric 1.21.11 V1.2 through V1.3.1.
+    // Only remove files explicitly marked as named; another generator's
+    // official class tweaker must never be touched. Preserve custom AW edits.
+    if (legacySharedTweaker.exists()) {
+        def legacyHeader = legacySharedTweaker.readLines("UTF-8")
+            .find { line -> !line.trim().isEmpty() && !line.trim().startsWith("#") }
+        if (legacyHeader != null && legacyHeader.trim() == "classTweaker v1 named") {
+            classTweakerFile.parentFile.mkdirs()
+            if (!classTweakerFile.exists()) {
+                classTweakerFile.bytes = legacySharedTweaker.bytes
+            }
+            if (!legacySharedTweaker.delete()) {
+                throw new GradleException("Unable to remove old named class tweaker: " + legacySharedTweaker)
+            }
+            logger.lifecycle("Migrated old Fabric 1.21.11 class tweaker away from shared path")
+        }
+    }
+
+    // MCreator generates the class tweaker as part of mod base resources, but
+    // Loom can configure the Gradle project *before* those resources exist.
+    // Previously we skipped setting accessWidenerPath in that case, leaving
+    // private Minecraft types (e.g. EquipmentLayerRenderer's key records)
+    // inaccessible to generated armor mixins even after code regeneration.
+    // Create a valid, empty class tweaker for the initial setup. MCreator will
+    // replace it with the full generated file when resources are regenerated.
+    if (!classTweakerFile.exists()) {
+        classTweakerFile.parentFile.mkdirs()
+        classTweakerFile.setText("classTweaker v1 named\n", "UTF-8")
+    }
+
+    def classTweakerHeader = classTweakerFile.readLines("UTF-8")
+        .find { line -> !line.trim().isEmpty() && !line.trim().startsWith("#") }
+
+    // A legacy pre-regeneration file from another Minecraft namespace must
+    // still be skipped to avoid failing the initial workspace import.
+    if (classTweakerHeader != null && classTweakerHeader.trim() == "classTweaker v1 named") {
+        accessWidenerPath = classTweakerFile
+    } else {
+        logger.lifecycle("Skipping incompatible pre-regeneration class tweaker during workspace setup: " + classTweakerHeader)
+    }
+}
+
+
+// Fabric Loom's development run can expose source resource directories directly,
+// so task-level processResources excludes are not enough. Filter invalid legacy
+// resource names at the source-set level too.
+sourceSets {
+    main {
+        resources {
+            exclude { details ->
+                def resourcePath = details.relativePath.pathString
+                resourcePath.contains(' ') || resourcePath.toLowerCase().endsWith('.lnk')
+            }
+        }
+    }
+}
+
+
+// Keep invalid resource paths out of produced jars as well.
+tasks.withType(Jar).configureEach {
+    exclude { details ->
+        def resourcePath = details.relativePath.pathString
+        resourcePath.contains(' ') || resourcePath.toLowerCase().endsWith('.lnk')
+    }
+}
+
+dependencies {
+    minecraft "com.mojang:minecraft:1.21.11"
+    mappings loom.officialMojangMappings()
+    modImplementation "net.fabricmc:fabric-loader:0.18.2"
+    modImplementation "maven.modrinth:modmenu:17.0.0"
+
+    // Fabric API
+    modImplementation "net.fabricmc.fabric-api:fabric-api:0.141.6+1.21.11"
+}
+
+repositories {
+    maven {
+        name = "Modrinth"
+        url = "https://api.modrinth.com/maven"
+        content { includeGroup "maven.modrinth" }
+    }
+}
+
+// MCreator's armor texture picker produces <name>_layer_1.png and
+// <name>_layer_2.png. Minecraft 1.21.11 expects them in separate equipment
+// directories. An older MCreator generator may have left their originals in
+// textures/models/armor, so recover those resources *when present*, without
+// touching the source artwork or overwriting correctly installed files.
+tasks.named('processResources', ProcessResources) {
+    // Minecraft resource locations cannot contain spaces, and Windows shortcut
+    // files are never valid mod resources. Ignore legacy/accidental files that
+    // would otherwise make the client resource loader print errors.
+    exclude { details ->
+        def resourcePath = details.relativePath.pathString
+        resourcePath.contains(' ') || resourcePath.toLowerCase().endsWith('.lnk')
+    }
+
+    doLast {
+        File texturesRoot = layout.buildDirectory.dir("resources/main/assets/discord_chat_sound/textures").get().asFile
+        File equipmentRoot = new File(texturesRoot, 'entity/equipment')
+        File humanoidDir = new File(equipmentRoot, 'humanoid')
+        File leggingsDir = new File(equipmentRoot, 'humanoid_leggings')
+
+        // Older generators stored both layers in one folder. Use the copied
+        // resource folders so this also works when importing an old workspace.
+        List<File> legacyDirs = [
+            new File(texturesRoot, 'models/armor'),
+            new File(texturesRoot, 'armor'),
+            equipmentRoot,
+            humanoidDir
+        ]
+
+        int recovered = 0
+        legacyDirs.each { File folder ->
+            if (folder.isDirectory()) {
+                folder.listFiles()?.findAll { it.isFile() && (it.name ==~ /(?i).*_layer_[12]\.png/) }?.each { File original ->
+                    File destination = new File(
+                        original.name.toLowerCase(Locale.ROOT).endsWith('_layer_2.png') ? leggingsDir : humanoidDir,
+                        original.name
+                    )
+                    // Never replace a real, current-version texture with a legacy one.
+                    if (!destination.isFile()) {
+                        destination.parentFile.mkdirs()
+                        java.nio.file.Files.copy(original.toPath(), destination.toPath())
+                        recovered++
+                    }
+                }
+            }
+        }
+        if (recovered > 0) {
+            logger.lifecycle("Recovered " + recovered + " armor texture PNG(s) from existing workspace resources")
+        }
+
+        // An asset that was deleted outright cannot be recreated by a generator.
+        // Explain missing equipment textures instead of silently rendering purple.
+        File equipmentDefs = layout.buildDirectory.dir("resources/main/assets/discord_chat_sound/equipment").get().asFile
+        if (equipmentDefs.isDirectory()) {
+            def parser = new groovy.json.JsonSlurper()
+            equipmentDefs.listFiles()?.findAll { it.isFile() && it.name.endsWith('.json') }?.each { File definition ->
+                def equipmentJson = parser.parse(definition)
+                if (equipmentJson instanceof Map && equipmentJson.layers instanceof Map) {
+                    ['humanoid', 'humanoid_leggings'].each { String layerType ->
+                        def layers = equipmentJson.layers[layerType]
+                        if (layers instanceof List) {
+                            layers.each { layer ->
+                                if (layer instanceof Map && layer.texture instanceof String) {
+                                    String prefix = actualmodid + ':'
+                                    if (layer.texture.startsWith(prefix)) {
+                                        String textureName = layer.texture.substring(prefix.length())
+                                        File expected = new File(equipmentRoot, layerType + '/' + textureName + '.png')
+                                        if (!expected.isFile()) {
+                                            logger.warn("Missing armor PNG: " + expected + ". Restore the original texture in MCreator's resources before exporting the mod.")
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    it.options.release = 21
+}
+
+java {
+    withSourcesJar()
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
+}
+
+apply from: 'mcreator.gradle'
+
+// MCreator runs "Run server and client" as one Gradle invocation containing both
+// runServer and runClient. Loom's normal runServer task blocks until the dedicated
+// server exits, so Gradle never reaches runClient.
+//
+// For the combined invocation only, launch the exact Loom-configured server Java
+// command as a child process, wait only until the server is actually listening, and
+// then let Gradle continue to runClient. Standalone runServer keeps Loom's normal
+// foreground behavior.
+def requestedMCreatorTasks = gradle.startParameter.taskNames.collect { name ->
+    name.tokenize(':').last()
+}
+def mcreatorCombinedServerClientRun = requestedMCreatorTasks.contains('runServer') && requestedMCreatorTasks.contains('runClient')
+def mcreatorCombinedServerProcess = [process: null]
+
+def stopMCreatorCombinedServer = {
+    Process process = mcreatorCombinedServerProcess.process
+
+    if (process != null && process.isAlive()) {
+        if (System.getProperty('os.name').toLowerCase(Locale.ROOT).contains('windows')) {
+            new ProcessBuilder('taskkill', '/PID', Long.toString(process.pid()), '/T', '/F')
+                .redirectErrorStream(true)
+                .start()
+                .waitFor()
+        } else {
+            def descendants = process.toHandle().descendants().toList().reverse()
+            descendants.each { handle ->
+                if (handle.isAlive()) handle.destroy()
+            }
+
+            process.destroy()
+            process.waitFor(3, java.util.concurrent.TimeUnit.SECONDS)
+
+            descendants.each { handle ->
+                if (handle.isAlive()) handle.destroyForcibly()
+            }
+
+            if (process.isAlive()) process.destroyForcibly()
+        }
+    }
+
+    mcreatorCombinedServerProcess.process = null
+}
+
+tasks.register('stopMCreatorCombinedServer') {
+    doLast {
+        stopMCreatorCombinedServer()
+    }
+}
+
+if (mcreatorCombinedServerClientRun) {
+    afterEvaluate {
+        def serverTask = tasks.named('runServer').get()
+        def serverRunConfig = loom.runs.getByName('server')
+
+        // Clearing JavaExec's action removes Gradle's inferred relationship to the
+        // downloaded assets directory, so keep it explicit for Gradle validation.
+        serverTask.dependsOn('downloadAssets')
+        serverTask.actions.clear()
+
+        serverTask.doLast {
+            String javaExec = serverTask.javaLauncher.get().executablePath.asFile.absolutePath
+
+            List<String> command = [javaExec]
+            command.addAll(serverTask.allJvmArgs.collect { it.toString() })
+            command.add(serverTask.mainClass.get())
+
+            if (serverTask.args != null) {
+                command.addAll(serverTask.args.collect { it.toString() })
+            }
+
+            serverTask.argumentProviders.each { provider ->
+                provider.asArguments().each { arg ->
+                    command.add(arg.toString())
+                }
+            }
+
+            File runDirectory = new File(project.projectDir, serverRunConfig.runDir)
+            if (!runDirectory.exists()) {
+                runDirectory.mkdirs()
+            }
+
+            ProcessBuilder processBuilder = new ProcessBuilder(command)
+            processBuilder.directory(runDirectory)
+            processBuilder.redirectErrorStream(true)
+
+            serverTask.environment.each { key, value ->
+                if (value != null) {
+                    processBuilder.environment().put(key.toString(), value.toString())
+                }
+            }
+
+            serverRunConfig.environmentVariables.each { key, value ->
+                if (value != null) {
+                    processBuilder.environment().put(key.toString(), value.toString())
+                }
+            }
+
+            File combinedServerLog = new File(runDirectory, 'mcreator-combined-server.log')
+            processBuilder.redirectOutput(combinedServerLog)
+
+            Process process = processBuilder.start()
+            mcreatorCombinedServerProcess.process = process
+
+            int serverPort = 25565
+            File serverProperties = new File(runDirectory, 'server.properties')
+
+            if (serverProperties.isFile()) {
+                Properties properties = new Properties()
+                serverProperties.withInputStream { properties.load(it) }
+
+                String configuredPort = properties.getProperty('server-port')
+                if (configuredPort != null && configuredPort.isInteger()) {
+                    serverPort = configuredPort.toInteger()
+                }
+            }
+
+            long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(45)
+            boolean serverReady = false
+
+            while (System.nanoTime() < deadline) {
+                if (!process.isAlive()) {
+                    String details = combinedServerLog.isFile() ? combinedServerLog.getText('UTF-8') : ''
+                    throw new GradleException(
+                        "MCreator combined Fabric server exited before opening port " +
+                        serverPort + ".\n" + details
+                    )
+                }
+
+                try {
+                    Socket socket = new Socket()
+                    try {
+                        socket.connect(new InetSocketAddress('127.0.0.1', serverPort), 250)
+                        serverReady = true
+                        break
+                    } finally {
+                        socket.close()
+                    }
+                } catch (IOException ignored) {
+                    Thread.sleep(200)
+                }
+            }
+
+            if (!serverReady) {
+                stopMCreatorCombinedServer()
+
+                String details = combinedServerLog.isFile() ? combinedServerLog.getText('UTF-8') : ''
+                throw new GradleException(
+                    "MCreator combined Fabric server did not open port " +
+                    serverPort + " within 45 seconds.\n" + details
+                )
+            }
+
+            logger.lifecycle("MCreator combined Fabric server is ready on localhost:" + serverPort)
+        }
+
+        tasks.named('runClient').configure {
+            finalizedBy('stopMCreatorCombinedServer')
+        }
+    }
+}
+
+import groovy.json.JsonSlurper
+import groovy.json.JsonOutput
+
+def patchTask = tasks.findByName('patchFabricModJson') ?: tasks.register('patchFabricModJson') {
+    doLast {
+        def f = file('src/main/resources/fabric.mod.json')
+        if (f.exists()) {
+            def json = new JsonSlurper().parse(f)
+            def eps = json.entrypoints ?: [:]
+            eps.client = ['net.mcreator.discordchatsound.ChatSoundClient']
+            eps.modmenu = ['net.mcreator.discordchatsound.ChatSoundModMenu']
+            json.entrypoints = eps
+            json.description = 'Discord sound for every message in chat!'
+            f.text = JsonOutput.prettyPrint(JsonOutput.toJson(json))
+            json.license = 'MIT'
+        }
+    }
+}
+
+tasks.named('processResources') {
+    dependsOn patchTask
+}

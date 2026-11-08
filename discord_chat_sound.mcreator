@@ -1,0 +1,52 @@
+{
+  "mod_elements": [],
+  "variable_elements": [],
+  "sound_elements": [],
+  "tag_elements": {},
+  "tab_element_order": {},
+  "language_map": {
+    "en_us": {}
+  },
+  "metadata": {
+    "files": [
+      "src/main/java/net/mcreator/discordchatsound/mixin/LivingEntityMixin.java",
+      "src/main/java/net/mcreator/discordchatsound/DiscordChatSoundModClient.java",
+      "src/main/java/net/mcreator/discordchatsound/mixin/BlockItemMixin.java",
+      "src/main/java/net/mcreator/discordchatsound/mixin/ExperienceOrbMixin.java",
+      "src/main/resources/discord_chat_sound.mixins.json",
+      "src/main/java/net/mcreator/discordchatsound/event/ItemEvents.java",
+      "src/main/resources/pack.mcmeta",
+      "src/main/java/net/mcreator/discordchatsound/DiscordChatSoundMod.java",
+      "src/main/java/net/mcreator/discordchatsound/mixin/PlayerMixin.java",
+      "src/main/java/net/mcreator/discordchatsound/event/PlayerEvents.java",
+      "src/main/java/net/mcreator/discordchatsound/mixin/ItemStackMixin.java",
+      "src/main/java/net/mcreator/discordchatsound/event/BlockEvents.java",
+      "src/main/resources/META-INF/discord_chat_sound.fabric12111.classtweaker",
+      "src/main/java/net/mcreator/discordchatsound/mixin/CommandsMixin.java",
+      "src/main/java/net/mcreator/discordchatsound/event/LivingEntityEvents.java",
+      "src/main/resources/fabric.mod.json",
+      "src/main/java/net/mcreator/discordchatsound/event/MiscEvents.java",
+      "src/main/java/net/mcreator/discordchatsound/mixin/BoneMealItemMixin.java"
+    ]
+  },
+  "foldersRoot": {
+    "name": "~",
+    "children": []
+  },
+  "workspaceSettings": {
+    "modid": "discord_chat_sound",
+    "modName": "discord chat sound",
+    "version": "1.0.0",
+    "author": "MCreator",
+    "websiteURL": "https://mcreator.net",
+    "license": "Not specified",
+    "serverSideOnly": false,
+    "requiredMods": [],
+    "dependencies": [],
+    "dependants": [],
+    "mcreatorDependencies": [],
+    "currentGenerator": "fabric-1.21.11",
+    "modElementsPackage": "net.mcreator.discordchatsound"
+  },
+  "mcreatorVersion": 202600233518
+}
